@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>프레임을 해체하라! Bunny Dash</title>
+<style>
+:root{--ink:#26344b;--mint:#c6f2df;--pink:#ff9fb9;--blue:#b8e5ff}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:#d9f3eb;color:var(--ink)}
+body{display:flex;justify-content:center}
+#app{width:min(100vw,520px);min-height:100dvh;position:relative;overflow:hidden;background:linear-gradient(#bfe8ff,#e5f7d7 58%,#c4efcf);padding-bottom:8px}
+header{display:flex;align-items:center;justify-content:space-between;padding:10px 13px 8px;gap:8px}
+.logo{font-size:17px;font-weight:1000;letter-spacing:-.5px}.stats{display:flex;gap:9px;background:#ffffffd9;border:2px solid white;border-radius:18px;padding:6px 10px;font-size:14px;font-weight:900;white-space:nowrap}
+#gameWrap{position:relative;margin:0 9px;border:4px solid white;border-radius:24px;overflow:hidden;background:#bde8ff;box-shadow:0 7px 0 #a5d7c6}
+canvas{display:block;width:100%;height:auto;touch-action:none}
+#overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;background:#20344a77;z-index:5}
+.panel{width:100%;max-width:365px;background:#fff9eb;border:4px solid white;border-radius:25px;padding:20px 17px;text-align:center;box-shadow:0 7px 0 #9cc6b9}
+.panel .hero{font-size:60px;filter:drop-shadow(0 6px 2px #9aa9a977)}.panel h1{font-size:25px;line-height:1.15;margin:4px 0 8px}.panel p{line-height:1.45;margin:7px 0 14px}
+button{border:0;border-radius:15px;padding:11px 13px;background:#ff9fb9;color:#563344;font-weight:950;font-size:15px;box-shadow:0 4px 0 #d97592;cursor:pointer;touch-action:manipulation}
+button:active{transform:translateY(2px);box-shadow:0 2px 0 #d97592}
+#quiz{position:absolute;left:7px;right:7px;bottom:7px;background:#fff9eb;border:3px solid white;border-radius:20px;padding:12px;z-index:4;box-shadow:0 5px 0 #a4c8bb}
+#quiz h2{font-size:17px;margin:0 0 5px}#qtext{font-size:14px;line-height:1.35;margin:0 0 9px;font-weight:750}
+.answers{display:grid;grid-template-columns:1fr 1fr;gap:7px}.answers button{font-size:13px;padding:10px 6px;background:#c8e7ff;box-shadow:0 3px 0 #8cb6d4;color:#23425c}
+#feedback{font-size:12px;font-weight:850;min-height:15px;margin-top:6px}
+#controls{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;padding:12px 12px 4px}
+#controls button{padding:11px 0;font-size:19px;background:#ffffff;border:2px solid white;box-shadow:0 4px 0 #b5d8ca}
+#controls .action{font-size:13px;line-height:1.15}
+.small{font-size:11px;color:#4f6c7b;text-align:center;padding:2px 12px 7px;margin:0}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<div id="app">
+<header><div class="logo">🐰 프레임을 해체하라!</div><div class="stats"><span>❤️ <b id="lives">3</b></span><span>⭐ <b id="score">0</b></span></div></header>
+<div id="gameWrap">
+<canvas id="game" width="480" height="620" aria-label="토끼가 장애물을 피하며 달리는 게임"></canvas>
+<div id="overlay"><div class="panel"><div class="hero">🐰</div><h1>버니 대시!</h1><p>좌우 이동, 점프, 슬라이딩으로 장애물을 피하자!<br>짧은 미디어 퀴즈를 맞히면 생명 +1 💗</p><button id="start">바로 달리기!</button></div></div>
+<div id="quiz" class="hidden"><h2>⚡ 스피드 미디어 퀴즈</h2><p id="qtext"></p><div class="answers" id="answers"></div><div id="feedback"></div></div>
+</div>
+<div id="controls">
+<button id="left" aria-label="왼쪽 이동">◀</button>
+<button id="jump" class="action" aria-label="점프">⬆️<br>점프</button>
+<button id="slide" class="action" aria-label="슬라이딩">⬇️<br>슬라이딩</button>
+<button id="right" aria-label="오른쪽 이동">▶</button>
+<button id="dash" class="action" aria-label="앞으로">⚡<br>대시</button>
+</div>
+<p class="small">스와이프 또는 버튼으로 조작 · 낮은 장애물은 점프, 높은 장애물은 슬라이딩!</p>
+</div>
+<script>
+(()=>{
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const overlay=document.getElementById('overlay'),quiz=document.getElementById('quiz');
+const livesEl=document.getElementById('lives'),scoreEl=document.getElementById('score');
+let running=false,paused=false,lives=3,score=0,tick=0,speed=1,player={lane:1,jump:0,slide:0},obstacles=[],frame=0,last=0,quizCount=0;
+const laneX=[126,240,354];
+const qs=[
+["자극적인 제목만으로 뉴스가 사실이라고 판단해도 될까?",["응, 제목이 중요해","아니, 출처와 본문 확인"],1,"출처와 본문, 다른 보도도 확인하자."],
+["광고를 볼 때 함께 확인해야 할 것은?",["가격과 이용 조건","배경 음악 취향"],0,"장점뿐 아니라 가격, 조건, 단점도 살펴봐!"],
+["추천 피드가 비슷한 의견만 보여 주면?",["관점이 좁아질 수 있다","모든 의견을 똑같이 보게 된다"],0,"비슷한 콘텐츠가 반복되면 다른 관점을 놓칠 수 있어."],
+["사진과 영상은 언제나 맥락과 무관하게 객관적일까?",["그렇다","아니다"],1,"편집과 촬영 각도, 앞뒤 맥락이 인상을 바꿀 수 있어."],
+["게시물을 공유하기 전 가장 좋은 행동은?",["출처와 날짜 확인","조회 수만 확인"],0,"출처와 날짜를 확인하고 다른 자료와 비교해 보자."],
+["개인정보를 지키는 방법은?",["비밀번호를 친구와 공유","앱 권한과 공개 범위 확인"],1,"필요한 권한만 허용하고 공개 범위를 확인해!"],
+["통계를 해석할 때 중요한 것은?",["조사 대상과 기준","숫자가 크면 무조건 믿기"],0,"표본과 조사 시기, 비교 기준을 알아야 해."],
+["한 집단을 계속 부정적으로 묘사하면?",["편견이 강화될 수 있다","현실을 완벽히 반영한다"],0,"반복되는 재현은 고정관념을 강화할 수 있어."]
+];
+function poly(points,fill,stroke=null,lw=1){ctx.beginPath();ctx.moveTo(points[0][0],points[0][1]);for(let i=1;i<points.length;i++)ctx.lineTo(points[i][0],points[i][1]);ctx.closePath();ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=lw;ctx.stroke()}}
+function draw(){
+ ctx.clearRect(0,0,480,620);
+ // dreamy sky, clouds and distant hills
+ const sky=ctx.createLinearGradient(0,0,0,620);sky.addColorStop(0,'#a9ddff');sky.addColorStop(.42,'#e5f6d3');sky.addColorStop(1,'#a9dcaa');ctx.fillStyle=sky;ctx.fillRect(0,0,480,620);
+ ctx.fillStyle='#ffffffa8';for(let i=0;i<4;i++){let x=((i*151-tick*8)%570+570)%570-40,y=70+i%2*45;ctx.beginPath();ctx.ellipse(x,y,29,10,0,0,7);ctx.ellipse(x+20,y-7,18,13,0,0,7);ctx.ellipse(x+39,y,23,9,0,0,7);ctx.fill()}
+ poly([[0,215],[75,150],[145,210],[240,135],[330,208],[420,145],[480,190],[480,620],[0,620]],'#9fd69b');
+ // road perspective trapezoid
+ poly([[174,105],[306,105],[470,620],[10,620]],'#48566b');
+ poly([[181,112],[299,112],[454,620],[26,620]],'#59677d');
+ // edge rails and lane dividers in perspective
+ poly([[171,105],[180,105],[31,620],[19,620]],'#f7e6b7');
+ poly([[300,105],[309,105],[461,620],[449,620]],'#f7e6b7');
+ for(let lane=1;lane<=2;lane++){let top=240+(lane-1)*0;let xTop=174+(306-174)*lane/3;let xBottom=10+(470-10)*lane/3;ctx.strokeStyle='#f4f0dc';ctx.lineWidth=3;ctx.setLineDash([18,20]);ctx.lineDashOffset=-(tick*2.7)%38;ctx.beginPath();ctx.moveTo(xTop,105);ctx.lineTo(xBottom,620);ctx.stroke();ctx.setLineDash([])}
+ // road streaks convey speed
+ for(let i=0;i<8;i++){let y=((i*95+tick*speed*3)%620);let p=(y-105)/515;if(p>=0){let half=66+p*164;ctx.strokeStyle='#ffffff20';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(240-half,y);ctx.lineTo(240+half,y);ctx.stroke()}}
+ // roadside flowers
+ for(let i=0;i<12;i++){let y=((i*61+tick*speed*2)%650);let side=i%2?1:-1;let p=Math.max(.08,(y-105)/515),x=240+side*(74+p*165);ctx.fillStyle=i%3?'#fff':'#ffd0dc';ctx.beginPath();ctx.arc(x,y,2+p*4,0,Math.PI*2);ctx.fill();ctx.fillStyle='#ffd36b';ctx.beginPath();ctx.arc(x,y,1+p*1.6,0,Math.PI*2);ctx.fill()}
+ // obstacle depth sorting
+ obstacles.slice().sort((a,b)=>a.progress-b.progress).forEach(drawObstacle);
+ const px=laneX[player.lane],py=510-(player.jump>0?Math.sin((1-player.jump)*Math.PI)*80:0);
+ drawBunny(px,py,player.slide>0,player.jump>0);
+ // speed banner
+ ctx.fillStyle='#fff8e9e8';ctx.beginPath();ctx.roundRect(12,12,138,31,13);ctx.fill();ctx.fillStyle='#2a4058';ctx.font='900 13px system-ui';ctx.fillText('DASH  × '+speed.toFixed(1),23,32);
+}
+function drawObstacle(o){
+ const depth=o.progress, y=130+depth*445,scale=.28+depth*.95,x=240+(laneX[o.lane]-240)*(.25+depth*.75);
+ ctx.fillStyle='#23364a38';ctx.beginPath();ctx.ellipse(x,y+13*scale,26*scale,7*scale,0,0,Math.PI*2);ctx.fill();
+ if(o.type==='bar'){
+  // low hurdle: jump over
+  poly([[x-28*scale,y],[x+28*scale,y],[x+23*scale,y+19*scale],[x-23*scale,y+19*scale]],'#f6cf6f','#fff0bd',2*scale);
+  ctx.fillStyle='#b66e5b';ctx.fillRect(x-20*scale,y+5*scale,40*scale,4*scale);
+ }else if(o.type==='gate'){
+  // high hanging gate: slide under
+  ctx.fillStyle='#f39ab0';ctx.fillRect(x-31*scale,y-28*scale,62*scale,12*scale);ctx.fillRect(x-28*scale,y-18*scale,8*scale,33*scale);ctx.fillRect(x+20*scale,y-18*scale,8*scale,33*scale);
+ }else{
+  ctx.fillStyle=o.color;ctx.beginPath();ctx.roundRect(x-29*scale,y-23*scale,58*scale,42*scale,8*scale);ctx.fill();
+  ctx.fillStyle='#bdeaff';ctx.beginPath();ctx.roundRect(x-19*scale,y-17*scale,38*scale,13*scale,4*scale);ctx.fill();
+  ctx.fillStyle='#ffe8a5';ctx.fillRect(x-24*scale,y+10*scale,7*scale,4*scale);ctx.fillRect(x+17*scale,y+10*scale,7*scale,4*scale);
+  ctx.fillStyle='#30394b';ctx.fillRect(x-21*scale,y+16*scale,12*scale,5*scale);ctx.fillRect(x+9*scale,y+16*scale,12*scale,5*scale);
+ }
+}
+function drawBunny(x,y,sliding,jumping){
+ const scale=sliding?.78:1;
+ ctx.fillStyle='#31445a35';ctx.beginPath();ctx.ellipse(x,y+23,22*scale,7*scale,0,0,Math.PI*2);ctx.fill();
+ ctx.save();ctx.translate(x,y);ctx.scale(scale,scale);
+ if(sliding){ctx.rotate(-.18);ctx.fillStyle='#fff8f1';ctx.beginPath();ctx.ellipse(0,5,25,14,0,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.ellipse(18,0,13,12,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#ffb6c7';ctx.beginPath();ctx.ellipse(26,3,4,2.5,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#39465b';ctx.beginPath();ctx.arc(20,-3,2,0,Math.PI*2);ctx.fill();ctx.restore();return}
+ ctx.fillStyle='#fff8f1';ctx.beginPath();ctx.ellipse(-10,-26,7,19,-.18,0,Math.PI*2);ctx.ellipse(10,-27,7,19,.18,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle='#ffb6c7';ctx.beginPath();ctx.ellipse(-10,-27,3,12,-.18,0,Math.PI*2);ctx.ellipse(10,-28,3,12,.18,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle='#fff8f1';ctx.beginPath();ctx.ellipse(0,8,19,19,0,0,Math.PI*2);ctx.arc(0,-8,19,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle='#ffb9c8';ctx.beginPath();ctx.arc(-10,-4,4,0,Math.PI*2);ctx.arc(10,-4,4,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle='#39465b';ctx.beginPath();ctx.arc(-6,-10,2.2,0,Math.PI*2);ctx.arc(6,-10,2.2,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle='#f18ca5';ctx.beginPath();ctx.moveTo(0,-5);ctx.lineTo(-3,-8);ctx.lineTo(3,-8);ctx.closePath();ctx.fill();
+ ctx.strokeStyle='#8e6572';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(0,-5);ctx.lineTo(0,-1);ctx.moveTo(0,-1);ctx.quadraticCurveTo(-4,2,-5,-1);ctx.moveTo(0,-1);ctx.quadraticCurveTo(4,2,5,-1);ctx.stroke();
+ ctx.restore();
+}
+function updateStats(){livesEl.textContent=lives;scoreEl.textContent=score}
+function reset(){lives=3;score=0;tick=0;speed=1;player={lane:1,jump:0,slide:0};obstacles=[];frame=0;quizCount=0;updateStats()}
+function move(dir){if(!running||paused)return;if(dir==='left')player.lane=Math.max(0,player.lane-1);if(dir==='right')player.lane=Math.min(2,player.lane+1);if(dir==='jump')player.jump=1;if(dir==='slide')player.slide=1;if(dir==='dash'){score++;speed=Math.min(2.4,1+score*.035);updateStats();if(score%3===0)showQuiz()}}
+function spawn(){const r=Math.random(),type=r<.35?'car':r<.68?'bar':'gate';obstacles.push({lane:Math.floor(Math.random()*3),progress:0,type,color:['#f59bb1','#ffd16d','#7dd3bf'][Math.floor(Math.random()*3)],checked:false})}
+function showQuiz(){if(!running||paused)return;paused=true;quiz.classList.remove('hidden');let q=qs[Math.floor(Math.random()*qs.length)];document.getElementById('qtext').textContent=q[0];document.getElementById('feedback').textContent='';const a=document.getElementById('answers');a.innerHTML='';q[1].forEach((label,i)=>{let b=document.createElement('button');b.textContent=label;b.onclick=()=>{if(paused===false)return;if(i===q[2]){lives=Math.min(5,lives+1);document.getElementById('feedback').textContent='정답! 생명 +1 💗';}else{document.getElementById('feedback').textContent=q[3];}updateStats();a.querySelectorAll('button').forEach(x=>x.disabled=true);setTimeout(()=>{quiz.classList.add('hidden');paused=false;},420)};a.appendChild(b)})}
+function endGame(){running=false;paused=false;overlay.classList.remove('hidden');overlay.querySelector('.panel').innerHTML=`<div class="hero">🐰</div><h1>다시 달려 볼까?</h1><p>이번 점수는 <b>${score}</b>점!<br>퀴즈를 맞히면 생명을 회복할 수 있어.</p><button id="start">다시 시작!</button>`;document.getElementById('start').onclick=start}
+function start(){reset();running=true;paused=false;overlay.classList.add('hidden');quiz.classList.add('hidden');last=0;requestAnimationFrame(loop)}
+function loop(t){if(!running)return;let dt=Math.min(32,t-(last||t));last=t;if(!paused){tick+=dt*.06;frame+=dt;player.jump=Math.max(0,player.jump-dt/520);player.slide=Math.max(0,player.slide-dt/520);if(frame>Math.max(350,720/speed)){spawn();frame=0}
+ for(const o of obstacles){o.progress+=dt*.00028*speed;if(!o.checked&&o.progress>.80&&o.progress<.94&&o.lane===player.lane){let safe=(o.type==='bar'&&player.jump>0.16)||(o.type==='gate'&&player.slide>0.12);if(!safe){o.checked=true;lives--;updateStats();if(lives<=0){endGame();return}}else{o.checked=true;score++;speed=Math.min(2.4,1+score*.035);updateStats();if(score%3===0)showQuiz()}}}
+ obstacles=obstacles.filter(o=>o.progress<1.1);draw()}if(running)requestAnimationFrame(loop)}
+document.getElementById('start').onclick=start;
+document.getElementById('left').onclick=()=>move('left');document.getElementById('right').onclick=()=>move('right');document.getElementById('jump').onclick=()=>move('jump');document.getElementById('slide').onclick=()=>move('slide');document.getElementById('dash').onclick=()=>move('dash');
+document.addEventListener('keydown',e=>{if(e.key==='ArrowLeft')move('left');if(e.key==='ArrowRight')move('right');if(e.key==='ArrowUp'||e.key===' ')move('jump');if(e.key==='ArrowDown')move('slide')});
+let sx=0,sy=0;canvas.addEventListener('touchstart',e=>{sx=e.changedTouches[0].clientX;sy=e.changedTouches[0].clientY},{passive:true});canvas.addEventListener('touchend',e=>{let dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;if(Math.abs(dx)>Math.abs(dy)){move(dx<0?'left':'right')}else if(dy<-15)move('jump');else if(dy>15)move('slide')},{passive:true});
+draw();
+})();
+</script>
+</body></html>
